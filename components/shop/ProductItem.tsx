@@ -12,7 +12,7 @@ import {
 import Card from '../ui/Card';
 
 const ProductItem = ({ image, title, price, onSelect, children }) => {
-  let Touchable: any = TouchableOpacity;
+  let Touchable = TouchableOpacity;
   if (Platform.OS === 'android' && Platform.Version >= 21) {
     Touchable = TouchableNativeFeedback;
   }

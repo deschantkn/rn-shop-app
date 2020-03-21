@@ -1,17 +1,77 @@
-import React, { useState } from 'react';
+import React, { useReducer } from 'react';
 import {
   StyleSheet,
-  Text,
   View,
-  TextInput,
   ScrollView,
-  Platform
+  Platform,
+  Alert
 } from 'react-native';
 import { CustomHeaderButtons } from '../../components/ui/HeaderButton';
 import { Item } from 'react-navigation-header-buttons';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store/types';
 import { updateProduct, createProduct } from '../../store/actions/products';
+import Input from '../../components/ui/Input';
+
+const FORM_UPDATE = 'FORM_UPDATE';
+type FormState = {
+  inputValues: {
+    title: string;
+    imageUrl: string;
+    description: string;
+    price: string;
+  };
+  inputValidities: {
+    title: boolean;
+    imageUrl: boolean;
+    description: boolean;
+    price: boolean;
+  };
+  inputIsTouched: {
+    title: boolean;
+    imageUrl: boolean;
+    description: boolean;
+    price: boolean;
+  };
+  formIsValid: boolean;
+};
+type FormAction = {
+  type: typeof FORM_UPDATE;
+  payload: {
+    input: string;
+    value: string;
+    isValid: boolean;
+    isTouched: boolean;
+  };
+};
+
+const formReducer = (state: FormState, action: FormAction): FormState => {
+  switch (action.type) {
+    case FORM_UPDATE:
+      const updatedValues = {
+        ...state.inputValues,
+        [action.payload.input]: action.payload.value
+      };
+      const updateValidities = {
+        ...state.inputValidities,
+        [action.payload.input]: action.payload.isValid
+      };
+
+      let updatedFormIsValid = true;
+      for (const key in updateValidities) {
+        updatedFormIsValid = updatedFormIsValid && updateValidities[key];
+      }
+
+      return {
+        ...state,
+        inputValues: updatedValues,
+        inputValidities: updateValidities,
+        formIsValid: updatedFormIsValid
+      };
+    default:
+      return state;
+  }
+};
 
 const EditProductScreen = ({ route: { params }, navigation }) => {
   navigation.setOptions({
@@ -29,24 +89,91 @@ const EditProductScreen = ({ route: { params }, navigation }) => {
     )
   });
 
+  const dispatch = useDispatch();
+
   const editedProduct = useSelector(({ products }: RootState) =>
     products.userProducts.find(prod => prod.id === params.productId)
   );
-  const [title, setTitle] = useState(editedProduct ? editedProduct.title : '');
-  const [imageUrl, setImageUrl] = useState(
-    editedProduct ? editedProduct.imageUrl : ''
-  );
-  const [price, setPrice] = useState('');
-  const [description, setDescription] = useState(
-    editedProduct ? editedProduct.description : ''
-  );
-  const dispatch = useDispatch();
+
+  const [formState, dispatchFormState] = useReducer(formReducer, {
+    inputValues: {
+      title: editedProduct ? editedProduct.title : '',
+      imageUrl: editedProduct ? editedProduct.imageUrl : '',
+      description: editedProduct ? editedProduct.description : '',
+      price: ''
+    },
+    inputValidities: {
+      title: editedProduct ? true : false,
+      imageUrl: editedProduct ? true : false,
+      description: editedProduct ? true : false,
+      price: editedProduct ? true : false
+    },
+    inputIsTouched: {
+      title: editedProduct ? true : false,
+      imageUrl: editedProduct ? true : false,
+      description: editedProduct ? true : false,
+      price: editedProduct ? true : false
+    },
+    formIsValid: false
+  });
+
+  const textChangeHandler = (text: string, inputId: string, validation) => {
+    const emailRegex = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+
+    let isValid = true;
+  
+    if (validation.required && text.trim().length === 0) {
+      isValid = false;
+    }
+    if (validation.email && !emailRegex.test(text.toLowerCase())) {
+      isValid = false;
+    }
+    if (validation.min != null && +text < validation.min) {
+      isValid = false;
+    }
+    if (validation.max != null && +text > validation.max) {
+      isValid = false;
+    }
+    if (validation.minLength != null && text.length < validation.minLength) {
+      isValid = false;
+    }
+
+    dispatchFormState({
+      type: FORM_UPDATE,
+      payload: {
+        input: inputId,
+        value: text,
+        isValid,
+        isTouched: true
+      }
+    });
+  };
 
   const submitHandler = () => {
+    if (!formState.formIsValid) {
+      Alert.alert('Wrong input!', 'Please check the errors in the form', [
+        { text: 'Okay' }
+      ]);
+      return;
+    }
     if (editedProduct) {
-      dispatch(updateProduct(params.productId, title, description, imageUrl));
+      dispatch(
+        updateProduct(
+          params.productId,
+          formState.inputValues.title,
+          formState.inputValues.description,
+          formState.inputValues.imageUrl
+        )
+      );
     } else {
-      dispatch(createProduct(title, description, imageUrl, +price));
+      dispatch(
+        createProduct(
+          formState.inputValues.title,
+          formState.inputValues.description,
+          formState.inputValues.imageUrl,
+          +formState.inputValues.price
+        )
+      );
     }
     navigation.goBack();
   };
@@ -54,40 +181,61 @@ const EditProductScreen = ({ route: { params }, navigation }) => {
   return (
     <ScrollView>
       <View style={styles.form}>
-        <View style={styles.formControl}>
-          <Text style={styles.label}>Title</Text>
-          <TextInput
-            style={styles.input}
-            value={title}
-            onChangeText={input => setTitle(input)}
-          />
-        </View>
-        <View style={styles.formControl}>
-          <Text style={styles.label}>Image URL</Text>
-          <TextInput
-            style={styles.input}
-            value={imageUrl}
-            onChangeText={input => setImageUrl(input)}
-          />
-        </View>
+        <Input
+          label='Title'
+          errorMessage='Please enter a valid title!'
+          inputConfig={{
+            keyboardType: 'default',
+            autoCapitalize: 'sentences',
+            autoCorrect: true,
+            returnKeyType: 'next'
+          }}
+          inputValue={formState.inputValues.title}
+          onChangeText={input => textChangeHandler(input, 'title', {})}
+          isValid={formState.inputValidities.title}
+          isTouched={formState.inputIsTouched.title}
+        />
+        <Input
+          label='Image URL'
+          errorMessage='Please enter a valid image url!'
+          inputConfig={{
+            keyboardType: 'default',
+            returnKeyType: 'next'
+          }}
+          inputValue={formState.inputValues.imageUrl}
+          onChangeText={input => textChangeHandler(input, 'imageUrl', {})}
+          isValid={formState.inputValidities.imageUrl}
+          isTouched={formState.inputIsTouched.imageUrl}
+        />
         {params.productId ? null : (
-          <View style={styles.formControl}>
-            <Text style={styles.label}>Price</Text>
-            <TextInput
-              style={styles.input}
-              value={price}
-              onChangeText={input => setPrice(input)}
-            />
-          </View>
-        )}
-        <View style={styles.formControl}>
-          <Text style={styles.label}>Description</Text>
-          <TextInput
-            style={styles.input}
-            value={description}
-            onChangeText={input => setDescription(input)}
+          <Input
+            label='Price'
+            errorMessage='Please enter a valid price!'
+            inputConfig={{
+              keyboardType: 'decimal-pad',
+              returnKeyType: 'next'
+            }}
+            inputValue={formState.inputValues.price}
+            onChangeText={input => textChangeHandler(input, 'price', {})}
+            isValid={formState.inputValidities.price}
+            isTouched={formState.inputIsTouched.price}
           />
-        </View>
+        )}
+        <Input
+          label='Description'
+          errorMessage='Please enter a valid description!'
+          inputConfig={{
+            keyboardType: 'default',
+            autoCapitalize: 'sentences',
+            autoCorrect: true,
+            multiline: true,
+            numberOfLines: 3
+          }}
+          inputValue={formState.inputValues.description}
+          onChangeText={input => textChangeHandler(input, 'description', {})}
+          isValid={formState.inputValidities.description}
+          isTouched={formState.inputIsTouched.description}
+        />
       </View>
     </ScrollView>
   );
@@ -97,18 +245,7 @@ const styles = StyleSheet.create({
   form: {
     margin: 20
   },
-  formControl: {
-    width: '100%'
-  },
-  label: {
-    fontFamily: 'open-sans-bold'
-  },
-  input: {
-    paddingHorizontal: 2,
-    paddingVertical: 5,
-    borderBottomColor: '#ccc',
-    borderBottomWidth: 1
-  }
+  
 });
 
 export default EditProductScreen;
